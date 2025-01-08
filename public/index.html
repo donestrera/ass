@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Arduino Control Panel</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="/socket.io/socket.io.js"></script>
+  </head>
+  <body>
+    <div class="container">
+      <div class="webcam-section">
+        <h2>Webcam Feed</h2>
+        <img id="webcamFeed" alt="Webcam Feed" />
+      </div>
+
+      <div class="arduino-section">
+        <h2>Arduino Control</h2>
+        <div class="arduino-data">
+          <h3>Received Data</h3>
+          <pre id="arduinoData">Waiting for data...</pre>
+        </div>
+        <div class="arduino-control">
+          <h3>Send Command</h3>
+          <input type="text" id="commandInput" placeholder="Enter command" />
+          <button onclick="sendCommand()">Send</button>
+        </div>
+      </div>
+
+      <div class="status-section">
+        <div id="connectionStatus">Connection Status: Disconnected</div>
+        <div id="errorMessages" class="error-messages"></div>
+      </div>
+    </div>
+    <script src="main.js"></script>
+  </body>
+</html>
