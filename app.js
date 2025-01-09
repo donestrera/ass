@@ -6,27 +6,39 @@ const { ReadlineParser } = require('@serialport/parser-readline');
 const path = require('path');
 const cors = require('cors');
 const NodeWebcam = require('node-webcam');
+const mongoose = require('mongoose');
+const dotenv = require('dotenv');
+
+// Load environment variables
+dotenv.config();
 
 // Express setup
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
-        origin: "http://localhost:3000",
+        origin: process.env.CLIENT_URL || "http://localhost:3000",
         methods: ["GET", "POST"]
     }
 });
-const port = process.env.PORT || 5001;
+
+// Connect to MongoDB
+mongoose.connect(process.env.MONGODB_URI)
+    .then(() => console.log('Connected to MongoDB'))
+    .catch(err => console.error('MongoDB connection error:', err));
 
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cors({
-    origin: "http://localhost:3000",
+    origin: process.env.CLIENT_URL || "http://localhost:3000",
     methods: ["GET", "POST"],
     credentials: true
 }));
-app.use(express.static(path.join(__dirname, 'public')));
+
+// Routes
+const authRoutes = require('./routes/auth');
+app.use('/api/auth', authRoutes);
 
 // Arduino Serial Port Configuration
 const portPath = '/dev/cu.usbserial-110'; // Update this to match your Arduino port
@@ -158,6 +170,6 @@ app.use((err, req, res, next) => {
 });
 
 // Start server
-server.listen(port, () => {
-    console.log(`Server running at http://localhost:${port}`);
+server.listen(process.env.PORT || 5001, () => {
+    console.log(`Server running at http://localhost:${process.env.PORT || 5001}`);
 });
