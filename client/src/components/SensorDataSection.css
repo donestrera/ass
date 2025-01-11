@@ -1,0 +1,142 @@
+/* Motion Controls */
+.motion-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* PIR Toggle Button */
+.pir-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 20px;
+  border: none;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  position: relative;
+  min-width: 120px;
+  background: #f0f0f0;
+}
+
+.pir-toggle-btn.enabled {
+  background: #4CAF50;
+  color: white;
+  box-shadow: 0 2px 4px rgba(76, 175, 80, 0.2);
+}
+
+.pir-toggle-btn.disabled {
+  background: #757575;
+  color: #ffffff;
+}
+
+.pir-toggle-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.pir-toggle-btn:active {
+  transform: translateY(0);
+}
+
+.toggle-icon {
+  font-size: 1.2em;
+}
+
+.toggle-text {
+  font-size: 0.9em;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.status-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ff0000;
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  transition: all 0.3s ease;
+}
+
+.status-indicator.active {
+  background: #4CAF50;
+  box-shadow: 0 0 8px #4CAF50;
+}
+
+/* Clear History Button */
+.clear-history-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid #e0e0e0;
+  background: white;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  color: #666;
+}
+
+.clear-history-btn:hover:not(:disabled) {
+  background: #f5f5f5;
+  border-color: #d0d0d0;
+  color: #333;
+}
+
+.clear-history-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.clear-history-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background: #f5f5f5;
+}
+
+.clear-icon {
+  font-size: 1.1em;
+}
+
+.clear-text {
+  font-size: 0.9em;
+}
+
+/* Card Header */
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #eee;
+}
+
+/* History Header */
+.history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .card-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  
+  .motion-controls {
+    width: 100%;
+  }
+  
+  .pir-toggle-btn {
+    width: 100%;
+    justify-content: center;
+  }
+} 

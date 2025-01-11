@@ -31,20 +31,43 @@ const io = new Server(server, {
 mongoose.connect(process.env.MONGODB_URI, {
     useNewUrlParser: true,
     useUnifiedTopology: true,
+    serverSelectionTimeoutMS: 5000,
+    socketTimeoutMS: 45000,
+    maxPoolSize: 10,
+    retryWrites: true
 })
 .then(() => console.log('Connected to MongoDB'))
 .catch(err => {
     console.error('MongoDB connection error:', err);
-    process.exit(1);
+    // Implement retry logic
+    setTimeout(() => {
+        console.log('Retrying MongoDB connection...');
+        mongoose.connect(process.env.MONGODB_URI).catch(err => {
+            console.error('Retry failed:', err);
+            process.exit(1);
+        });
+    }, 5000);
 });
 
-// Add error handler for MongoDB connection
+// Enhanced error handlers for MongoDB connection
 mongoose.connection.on('error', err => {
     console.error('MongoDB connection error:', err);
+    if (err.name === 'MongoNetworkError') {
+        console.log('Network error detected, attempting to reconnect...');
+    }
 });
 
 mongoose.connection.on('disconnected', () => {
-    console.log('MongoDB disconnected');
+    console.log('MongoDB disconnected, attempting to reconnect...');
+    setTimeout(() => {
+        mongoose.connect(process.env.MONGODB_URI).catch(err => {
+            console.error('Reconnection failed:', err);
+        });
+    }, 5000);
+});
+
+mongoose.connection.on('connected', () => {
+    console.log('MongoDB connected successfully');
 });
 
 // Middleware

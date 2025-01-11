@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import './SensorDataSection.css';
 
 function SensorDataSection({ socket }) {
   const [sensorData, setSensorData] = useState({
@@ -9,12 +10,12 @@ function SensorDataSection({ socket }) {
   });
   
   const [motionHistory, setMotionHistory] = useState([]);
-  const maxHistoryItems = 10; // Maximum number of history items to show
+  const maxHistoryItems = 10;
+  const [pirEnabled, setPirEnabled] = useState(true);
 
   useEffect(() => {
     socket.on('arduinoData', (data) => {
       setSensorData(prevData => {
-        // If motion was just detected (changed from false to true)
         if (!prevData.motionDetected && data.motionDetected) {
           const timestamp = new Date().toLocaleTimeString();
           setMotionHistory(prev => [
@@ -26,16 +27,45 @@ function SensorDataSection({ socket }) {
       });
     });
 
+    // Listen for PIR status updates
+    socket.on('pirStatus', (data) => {
+      setPirEnabled(data.enabled);
+    });
+
     return () => {
       socket.off('arduinoData');
+      socket.off('pirStatus');
     };
   }, [socket]);
+
+  const clearHistory = () => {
+    setMotionHistory([]);
+  };
+
+  const togglePir = () => {
+    const newState = !pirEnabled;
+    socket.emit('togglePir', { enabled: newState });
+    setPirEnabled(newState);
+  };
 
   return (
     <div className="sensor-data-grid">
       {/* Motion Detection Container */}
       <div className="sensor-card">
-        <h2>Motion Detection</h2>
+        <div className="card-header">
+          <h2>Motion Detection</h2>
+          <div className="motion-controls">
+            <button 
+              onClick={togglePir} 
+              className={`pir-toggle-btn ${pirEnabled ? 'enabled' : 'disabled'}`}
+              title={pirEnabled ? 'Click to disable motion detection' : 'Click to enable motion detection'}
+            >
+              <span className="toggle-icon">{pirEnabled ? '🔔' : '🔕'}</span>
+              <span className="toggle-text">{pirEnabled ? 'Enabled' : 'Disabled'}</span>
+              <div className={`status-indicator ${pirEnabled ? 'active' : ''}`}></div>
+            </button>
+          </div>
+        </div>
         <div className={`sensor-status ${sensorData.motionDetected ? 'alert' : 'normal'}`}>
           <div className="sensor-icon">
             {sensorData.motionDetected ? '🚨' : '👁️'}
@@ -47,7 +77,18 @@ function SensorDataSection({ socket }) {
         
         {/* Motion History Log */}
         <div className="motion-history">
-          <h3>Motion History</h3>
+          <div className="history-header">
+            <h3>Motion History</h3>
+            <button 
+              onClick={clearHistory} 
+              className="clear-history-btn"
+              disabled={motionHistory.length === 0}
+              title={motionHistory.length > 0 ? 'Clear motion history' : 'No history to clear'}
+            >
+              <span className="clear-icon">🗑️</span>
+              <span className="clear-text">Clear History</span>
+            </button>
+          </div>
           <div className="history-list">
             {motionHistory.length > 0 ? (
               motionHistory.map((event, index) => (
