@@ -8,15 +8,19 @@
     "dev": "nodemon app.js"
   },
   "dependencies": {
+    "@serialport/parser-readline": "^10.5.0",
     "axios": "^1.6.2",
+    "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
-    "express": "^4.18.2",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
     "express-session": "^1.17.3",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.9.4",
+    "node-webcam": "^0.8.2",
     "path": "^0.12.7",
     "serialport": "^10.5.0",
-    "@serialport/parser-readline": "^10.5.0",
-    "socket.io": "^4.7.2",
-    "node-webcam": "^0.8.2"
+    "socket.io": "^4.8.1"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"

@@ -1,44 +1,85 @@
 const express = require('express');
-const session = require('express-session');
 const http = require('http');
 const { Server } = require('socket.io');
 const { SerialPort } = require('serialport');
 const { ReadlineParser } = require('@serialport/parser-readline');
 const path = require('path');
-const axios = require('axios');
 const cors = require('cors');
 const NodeWebcam = require('node-webcam');
+const mongoose = require('mongoose');
+const dotenv = require('dotenv');
+
+// Load environment variables
+dotenv.config();
 
 // Express setup
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
-const port = process.env.PORT || 3000;
+const io = new Server(server, {
+    cors: {
+        origin: "*",
+        methods: ["GET", "POST", "OPTIONS"],
+        credentials: true,
+        allowedHeaders: ['Content-Type', 'Authorization']
+    },
+    transports: ['websocket', 'polling'],
+    pingTimeout: 60000,
+    pingInterval: 25000
+});
+
+// Connect to MongoDB
+mongoose.connect(process.env.MONGODB_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+})
+.then(() => console.log('Connected to MongoDB'))
+.catch(err => {
+    console.error('MongoDB connection error:', err);
+    process.exit(1);
+});
+
+// Add error handler for MongoDB connection
+mongoose.connection.on('error', err => {
+    console.error('MongoDB connection error:', err);
+});
+
+mongoose.connection.on('disconnected', () => {
+    console.log('MongoDB disconnected');
+});
 
 // Middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(cors());
-app.use(express.static(path.join(__dirname, 'public')));
-app.use(session({
-    secret: 'your-secret-key',
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-        secure: process.env.NODE_ENV === 'production',
-        httpOnly: true,
-        maxAge: 24 * 60 * 60 * 1000
-    }
+app.use(cors({
+    origin: "*",
+    methods: ["GET", "POST", "OPTIONS"],
+    credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
+// Add this before your routes
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Routes
+const authRoutes = require('./routes/auth');
+app.use('/api/auth', authRoutes);
+
+// Add viewer route
+app.get('/viewer', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'viewer.html'));
+});
+
 // Arduino Serial Port Configuration
-const portPath = '/dev/cu.usbserial-110'; // Update this to match your Arduino port
+const portPath = '/dev/ttyACM0'; // Default Arduino port on Ubuntu
+// Alternative ports to try: '/dev/ttyUSB0', '/dev/ttyACM1'
 const baudRate = 9600;
 
-// Create Serial Port instance
+// Create Serial Port instance with error handling
 const serialPort = new SerialPort({
     path: portPath,
     baudRate: baudRate
+}).on('error', (err) => {
+    console.error('Error opening serial port:', err.message);
+    // Continue running even if Arduino is not connected
 });
 
 // Create parser
@@ -59,23 +100,25 @@ const webcamOptions = {
 
 const Webcam = NodeWebcam.create(webcamOptions);
 
+// Add PIR sensor state
+let pirEnabled = false;
+
 // WebSocket Communication
 io.on('connection', (socket) => {
-    console.log('Client connected');
-    
-    socket.emit('connectionStatus', { status: 'connected' });
+    console.log('Client connected:', socket.id);
     
     // Identify if this is the main computer
     socket.on('registerAsMain', () => {
-        console.log('Main computer registered');
+        console.log('Main computer registered:', socket.id);
         socket.isMainComputer = true;
         socket.broadcast.emit('mainComputerStatus', { connected: true });
     });
 
-    // Handle webcam frames from main computer
+    // Handle webcam frames with better error handling
     socket.on('webcamFrame', (data) => {
         if (socket.isMainComputer) {
-            // Broadcast frame to all clients except sender
+            console.log('Broadcasting frame from:', socket.id);
+            // Broadcast frame to all other clients
             socket.broadcast.emit('receiveWebcamFrame', data);
         }
     });
@@ -102,11 +145,45 @@ io.on('connection', (socket) => {
         }
     });
 
+    // Send initial PIR status
+    socket.emit('pirStatus', { enabled: pirEnabled });
+
+    // Handle PIR toggle
+    socket.on('togglePir', (data) => {
+        if (socket.isMainComputer) {
+            pirEnabled = data.enabled;
+            console.log('PIR Sensor status changed:', pirEnabled);
+
+            // Send command to Arduino
+            if (serialPort.isOpen) {
+                const command = pirEnabled ? 'PIR_ON' : 'PIR_OFF';
+                serialPort.write(`${command}\n`, (err) => {
+                    if (err) {
+                        console.error('Error sending PIR command:', err);
+                        socket.emit('error', { message: 'Failed to send PIR command' });
+                    } else {
+                        // Broadcast new status to all clients
+                        io.emit('pirStatus', { enabled: pirEnabled });
+                    }
+                });
+            } else {
+                console.error('Serial port is not open');
+                socket.emit('error', { message: 'Device not connected' });
+            }
+        }
+    });
+
     socket.on('disconnect', () => {
         if (socket.isMainComputer) {
+            console.log('Main computer disconnected:', socket.id);
             io.emit('mainComputerStatus', { connected: false });
         }
-        console.log('Client disconnected');
+        console.log('Client disconnected:', socket.id);
+    });
+
+    // Error handling
+    socket.on('error', (error) => {
+        console.error('Socket error:', error);
     });
 });
 
@@ -116,15 +193,17 @@ parser.on('data', (data) => {
         const parsedData = JSON.parse(data.trim());
         console.log('Received from Arduino:', parsedData);
         
-        // Validate data structure
-        if (!parsedData || typeof parsedData !== 'object') {
-            throw new Error('Invalid data format');
+        // Handle PIR sensor data if included
+        if (parsedData.hasOwnProperty('pirTriggered')) {
+            io.emit('pirEvent', {
+                triggered: parsedData.pirTriggered,
+                timestamp: new Date().toISOString()
+            });
         }
         
         io.emit('arduinoData', parsedData);
     } catch (error) {
-        console.error('Error parsing Arduino data:', error.message);
-        console.log('Raw data received:', data);
+        console.error('Error parsing Arduino data:', error);
         io.emit('error', { message: 'Error processing device data' });
     }
 });
@@ -146,81 +225,9 @@ serialPort.on('error', (err) => {
     }, 5000);
 });
 
-// Authentication routes
+// Serve main page
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'login.html'));
-});
-
-app.get('/login', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'login.html'));
-});
-
-app.get('/register', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'register.html'));
-});
-
-app.get('/dashboard', (req, res) => {
-    if (req.session.authenticated) {
-        res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
-    } else {
-        res.redirect('/login');
-    }
-});
-
-// Login route
-app.post('/api/login', async (req, res) => {
-    const { username, password } = req.body;
-
-    if (!username || !password) {
-        return res.status(400).json({ 
-            success: false, 
-            message: 'Username and password are required' 
-        });
-    }
-
-    try {
-        const response = await axios.post('http://127.0.0.1:5001/api/v1/login', {
-            username,
-            password
-        });
-
-        if (response.data.success) {
-            req.session.authenticated = true;
-            req.session.user = username;
-            
-            req.session.save((err) => {
-                if (err) {
-                    console.error('Session save error:', err);
-                    return res.status(500).json({
-                        success: false,
-                        message: 'Error saving session'
-                    });
-                }
-                res.json({
-                    success: true,
-                    message: 'Login successful',
-                    redirect_url: '/dashboard'
-                });
-            });
-        } else {
-            res.json(response.data);
-        }
-    } catch (error) {
-        console.error('Login error:', error);
-        if (error.response) {
-            res.status(error.response.status).json(error.response.data);
-        } else if (error.code === 'ECONNREFUSED') {
-            res.status(503).json({
-                success: false,
-                message: 'Authentication service unavailable'
-            });
-        } else {
-            res.status(500).json({
-                success: false,
-                message: 'Internal server error'
-            });
-        }
-    }
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // Add after all routes in app.js
@@ -233,6 +240,6 @@ app.use((err, req, res, next) => {
 });
 
 // Start server
-server.listen(port, () => {
-    console.log(`Server running at http://localhost:${port}`);
+server.listen(process.env.PORT || 5001, '0.0.0.0', () => {
+    console.log(`Server running at http://0.0.0.0:${process.env.PORT || 5001}`);
 });
