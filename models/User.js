@@ -12,12 +12,8 @@ const userSchema = new mongoose.Schema({
     password: {
         type: String,
         required: true,
-        minlength: 6
-    },
-    role: {
-        type: String,
-        enum: ['admin', 'user'],
-        default: 'user'
+        minlength: 6,
+        select: false  // Don't include password by default
     },
     createdAt: {
         type: Date,
@@ -40,7 +36,15 @@ userSchema.pre('save', async function(next) {
 
 // Method to compare passwords
 userSchema.methods.comparePassword = async function(candidatePassword) {
-    return bcrypt.compare(candidatePassword, this.password);
+    try {
+        if (!candidatePassword) {
+            throw new Error('Password is required');
+        }
+        return await bcrypt.compare(candidatePassword, this.password);
+    } catch (error) {
+        console.error('Password comparison error:', error);
+        throw new Error('Error comparing passwords');
+    }
 };
 
 const User = mongoose.model('User', userSchema);

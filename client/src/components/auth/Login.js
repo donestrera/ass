@@ -23,25 +23,35 @@ function Login({ onLogin, onSwitchToRegister }) {
     setError('');
 
     try {
-      const response = await fetch('http://localhost:5001/api/auth/login', {
+      const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify(formData)
       });
 
       const data = await response.json();
+      console.log('Login response:', data);
 
       if (!response.ok) {
         throw new Error(data.message || 'Login failed');
       }
 
+      if (!data.token) {
+        throw new Error('No token received');
+      }
+
       localStorage.setItem('token', data.token);
       localStorage.setItem('username', data.username);
-      onLogin(data);
+      onLogin({
+        token: data.token,
+        username: data.username
+      });
     } catch (err) {
-      setError(err.message);
+      console.error('Login error:', err);
+      setError(err.message || 'Error connecting to server');
     } finally {
       setIsLoading(false);
     }

@@ -17,37 +17,69 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
-        origin: process.env.CLIENT_URL || "http://localhost:3000",
-        methods: ["GET", "POST"]
-    }
+        origin: "*",
+        methods: ["GET", "POST", "OPTIONS"],
+        credentials: true,
+        allowedHeaders: ['Content-Type', 'Authorization']
+    },
+    transports: ['websocket', 'polling'],
+    pingTimeout: 60000,
+    pingInterval: 25000
 });
 
 // Connect to MongoDB
-mongoose.connect(process.env.MONGODB_URI)
-    .then(() => console.log('Connected to MongoDB'))
-    .catch(err => console.error('MongoDB connection error:', err));
+mongoose.connect(process.env.MONGODB_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+})
+.then(() => console.log('Connected to MongoDB'))
+.catch(err => {
+    console.error('MongoDB connection error:', err);
+    process.exit(1);
+});
+
+// Add error handler for MongoDB connection
+mongoose.connection.on('error', err => {
+    console.error('MongoDB connection error:', err);
+});
+
+mongoose.connection.on('disconnected', () => {
+    console.log('MongoDB disconnected');
+});
 
 // Middleware
+app.use(cors({
+    origin: "*",
+    methods: ["GET", "POST", "OPTIONS"],
+    credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
+// Add this before your routes
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(cors({
-    origin: process.env.CLIENT_URL || "http://localhost:3000",
-    methods: ["GET", "POST"],
-    credentials: true
-}));
 
 // Routes
 const authRoutes = require('./routes/auth');
 app.use('/api/auth', authRoutes);
 
+// Add viewer route
+app.get('/viewer', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'viewer.html'));
+});
+
 // Arduino Serial Port Configuration
-const portPath = '/dev/cu.usbserial-110'; // Update this to match your Arduino port
+const portPath = '/dev/ttyACM0'; // Default Arduino port on Ubuntu
+// Alternative ports to try: '/dev/ttyUSB0', '/dev/ttyACM1'
 const baudRate = 9600;
 
-// Create Serial Port instance
+// Create Serial Port instance with error handling
 const serialPort = new SerialPort({
     path: portPath,
     baudRate: baudRate
+}).on('error', (err) => {
+    console.error('Error opening serial port:', err.message);
+    // Continue running even if Arduino is not connected
 });
 
 // Create parser
@@ -68,23 +100,25 @@ const webcamOptions = {
 
 const Webcam = NodeWebcam.create(webcamOptions);
 
+// Add PIR sensor state
+let pirEnabled = false;
+
 // WebSocket Communication
 io.on('connection', (socket) => {
-    console.log('Client connected');
-    
-    socket.emit('connectionStatus', { status: 'connected' });
+    console.log('Client connected:', socket.id);
     
     // Identify if this is the main computer
     socket.on('registerAsMain', () => {
-        console.log('Main computer registered');
+        console.log('Main computer registered:', socket.id);
         socket.isMainComputer = true;
         socket.broadcast.emit('mainComputerStatus', { connected: true });
     });
 
-    // Handle webcam frames from main computer
+    // Handle webcam frames with better error handling
     socket.on('webcamFrame', (data) => {
         if (socket.isMainComputer) {
-            // Broadcast frame to all clients except sender
+            console.log('Broadcasting frame from:', socket.id);
+            // Broadcast frame to all other clients
             socket.broadcast.emit('receiveWebcamFrame', data);
         }
     });
@@ -111,11 +145,45 @@ io.on('connection', (socket) => {
         }
     });
 
+    // Send initial PIR status
+    socket.emit('pirStatus', { enabled: pirEnabled });
+
+    // Handle PIR toggle
+    socket.on('togglePir', (data) => {
+        if (socket.isMainComputer) {
+            pirEnabled = data.enabled;
+            console.log('PIR Sensor status changed:', pirEnabled);
+
+            // Send command to Arduino
+            if (serialPort.isOpen) {
+                const command = pirEnabled ? 'PIR_ON' : 'PIR_OFF';
+                serialPort.write(`${command}\n`, (err) => {
+                    if (err) {
+                        console.error('Error sending PIR command:', err);
+                        socket.emit('error', { message: 'Failed to send PIR command' });
+                    } else {
+                        // Broadcast new status to all clients
+                        io.emit('pirStatus', { enabled: pirEnabled });
+                    }
+                });
+            } else {
+                console.error('Serial port is not open');
+                socket.emit('error', { message: 'Device not connected' });
+            }
+        }
+    });
+
     socket.on('disconnect', () => {
         if (socket.isMainComputer) {
+            console.log('Main computer disconnected:', socket.id);
             io.emit('mainComputerStatus', { connected: false });
         }
-        console.log('Client disconnected');
+        console.log('Client disconnected:', socket.id);
+    });
+
+    // Error handling
+    socket.on('error', (error) => {
+        console.error('Socket error:', error);
     });
 });
 
@@ -125,15 +193,17 @@ parser.on('data', (data) => {
         const parsedData = JSON.parse(data.trim());
         console.log('Received from Arduino:', parsedData);
         
-        // Validate data structure
-        if (!parsedData || typeof parsedData !== 'object') {
-            throw new Error('Invalid data format');
+        // Handle PIR sensor data if included
+        if (parsedData.hasOwnProperty('pirTriggered')) {
+            io.emit('pirEvent', {
+                triggered: parsedData.pirTriggered,
+                timestamp: new Date().toISOString()
+            });
         }
         
         io.emit('arduinoData', parsedData);
     } catch (error) {
-        console.error('Error parsing Arduino data:', error.message);
-        console.log('Raw data received:', data);
+        console.error('Error parsing Arduino data:', error);
         io.emit('error', { message: 'Error processing device data' });
     }
 });
@@ -170,6 +240,6 @@ app.use((err, req, res, next) => {
 });
 
 // Start server
-server.listen(process.env.PORT || 5001, () => {
-    console.log(`Server running at http://localhost:${process.env.PORT || 5001}`);
+server.listen(process.env.PORT || 5001, '0.0.0.0', () => {
+    console.log(`Server running at http://0.0.0.0:${process.env.PORT || 5001}`);
 });

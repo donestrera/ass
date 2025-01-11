@@ -28,29 +28,56 @@ router.post('/register', async (req, res) => {
 router.post('/login', async (req, res) => {
     try {
         const { username, password } = req.body;
+        console.log('Login attempt for:', username);
 
-        // Find user
-        const user = await User.findOne({ username });
+        if (!username || !password) {
+            return res.status(400).json({
+                success: false,
+                message: 'Username and password are required'
+            });
+        }
+
+        // Find user with password included
+        const user = await User.findOne({ username }).select('+password');
+        
         if (!user) {
-            return res.status(401).json({ message: 'Invalid credentials' });
+            console.log('User not found:', username);
+            return res.status(401).json({
+                success: false,
+                message: 'Invalid credentials'
+            });
         }
 
-        // Check password
         const isMatch = await user.comparePassword(password);
+        console.log('Password match:', isMatch);
+
         if (!isMatch) {
-            return res.status(401).json({ message: 'Invalid credentials' });
+            return res.status(401).json({
+                success: false,
+                message: 'Invalid credentials'
+            });
         }
 
-        // Create token
         const token = jwt.sign(
-            { userId: user._id, username: user.username, role: user.role },
-            process.env.JWT_SECRET,
+            { userId: user._id, username: user.username },
+            process.env.JWT_SECRET || 'fallback_secret',
             { expiresIn: '24h' }
         );
 
-        res.json({ token, username: user.username, role: user.role });
+        res.status(200).json({
+            success: true,
+            token,
+            username: user.username,
+            message: 'Login successful'
+        });
+
     } catch (error) {
-        res.status(500).json({ message: 'Error logging in', error: error.message });
+        console.error('Login error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     }
 });
 

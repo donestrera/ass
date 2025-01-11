@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { io } from 'socket.io-client';
 import './App.css';
 import WebcamSection from './components/WebcamSection';
-import ArduinoSection from './components/ArduinoSection';
 import StatusSection from './components/StatusSection';
 import SensorDataSection from './components/SensorDataSection';
 import AuthPage from './components/auth/AuthPage';
@@ -45,7 +44,7 @@ function App() {
         <div className="header-content">
           <div className="header-left">
             <h1>ASS 🍑 Group 5</h1>
-            <span className="header-subtitle">Security Monitoring System</span>
+            <span className="header-subtitle">Alarm System Security Monitoring System</span>
           </div>
           <div className="header-right">
             <div className="user-info">
@@ -63,9 +62,6 @@ function App() {
         <div className="section-card">
           <WebcamSection socket={socket} />
           <SensorDataSection socket={socket} />
-        </div>
-        <div className="section-card">
-          <ArduinoSection socket={socket} />
         </div>
       </div>
       <StatusSection socket={socket} />
